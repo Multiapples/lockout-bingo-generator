@@ -558,10 +558,17 @@ function save_board_image(board) {
  * @param {Objective[][]} board
  */
 function save_board_json(board) {
+    // Create a transposed copy of board because BingoSync uses column major order..
+    expect(board.length === board[0].length, "Transpose implementation only works on square boards");
+    board = board.map((_, row_idx) =>
+        board[0].map((_, col_idx) =>
+            board[col_idx][row_idx]
+        )
+    );
     let txt = "";
     txt += "[\n";
-    txt += board.flatMap(row =>
-        row.map(cell =>
+    txt += board.flatMap(col =>
+        col.map(cell =>
             `     { "name": "${cell.name}" }`
         )
     ).join(",\n");
