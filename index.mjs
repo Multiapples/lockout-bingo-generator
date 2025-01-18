@@ -230,6 +230,7 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
  * @typedef {Object} GeneratorContext
  * @property {Objective[][]} board
  * @property {number} size
+ * @property {Interval} objective_difficulty The acceptable interval for the tier of each individual objective.
  * @property {Interval} bingo_difficulty The acceptable interval for the sum of tiers on each bingo line.
  * @property {TypeExclusivity} type_exclusivity The strictness of type-incompatibility in bingo lines
  * @property {Set<string>} objective_names The names of all objectives currently on the board.
@@ -249,13 +250,12 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
  * }}
  */
 function count_bingo_constraints(context, row, col) {
-    const { board, size, bingo_difficulty } = context;
+    const { board, size, objective_difficulty, bingo_difficulty } = context;
     // Pick a random objective that works
     // Count tiers already present in each bingo to narrow down acceptable tiers.
     // Also count types already present in each bingo to narrow down acceptable types.
     /** @type {Interval[]} */
     let bingo_tier_intervals = new Array(4).fill(0).map(_ => bingo_difficulty.clone());
-    const unpicked_tier_interval = new Interval(MIN_TIER, MAX_TIER);
     /** @type {string[][]} */
     let bingo_types = [];
     for (let i = 0; i < size; i++) { // Along row
@@ -264,7 +264,7 @@ function count_bingo_constraints(context, row, col) {
         }
         /** @type {Objective | null} */
         const cell = board[row][i];
-        bingo_tier_intervals[0].sub(cell === null ? unpicked_tier_interval : Interval.valueOf(cell.tier));
+        bingo_tier_intervals[0].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
         if (cell !== null) {
             bingo_types.push(cell.types);
         }
@@ -276,7 +276,7 @@ function count_bingo_constraints(context, row, col) {
         }
         /** @type {Objective | null} */
         const cell = board[i][col];
-        bingo_tier_intervals[1].sub(cell === null ? unpicked_tier_interval : Interval.valueOf(cell.tier));
+        bingo_tier_intervals[1].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
         if (cell !== null) {
             bingo_types.push(cell.types);
         }
@@ -289,13 +289,13 @@ function count_bingo_constraints(context, row, col) {
             }
             /** @type {Objective | null} */
             const cell = board[i][i];
-            bingo_tier_intervals[2].sub(cell === null ? unpicked_tier_interval : Interval.valueOf(cell.tier));
+            bingo_tier_intervals[2].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
             if (cell !== null) {
                 bingo_types.push(cell.types);
             }
         }
     } else {
-        bingo_tier_intervals[2] = Interval.safeIntegerRange();
+        bingo_tier_intervals[2] = null;
     }
 
     if (row + col === size - 1) {
@@ -305,19 +305,20 @@ function count_bingo_constraints(context, row, col) {
             }
             /** @type {Objective | null} */
             const cell = board[i][size - 1 - i];
-            bingo_tier_intervals[3].sub(cell === null ? unpicked_tier_interval : Interval.valueOf(cell.tier));
+            bingo_tier_intervals[3].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
             if (cell !== null) {
                 bingo_types.push(cell.types);
             }
         }
     } else {
-        bingo_tier_intervals[3] = Interval.safeIntegerRange();
+        bingo_tier_intervals[3] = null;
     }
     
-    const bingo_tier_interval = bingo_tier_intervals.reduce(
-        (acc, itv) => Interval.intersection(acc, itv),
-        Interval.safeIntegerRange()
-    );
+    const bingo_tier_interval = bingo_tier_intervals.filter(v => v !== null)
+        .reduce(
+            (acc, itv) => Interval.intersection(acc, itv),
+            objective_difficulty
+        );
 
     return {
         tier_interval: bingo_tier_interval,
@@ -380,15 +381,17 @@ function generate_board_helper(context) {
             //     console.log("backtracks: " + context.backtracks);
             // }
             const BACKTRACK_LIMIT = 100;
-            if (context.backtracks >= BACKTRACK_LIMIT) {
-                if (context.backtracks === BACKTRACK_LIMIT) {
-                    console.log("Too much backtracking... Restarting.");
-                }
-                if (context.depth > 2) { // Permute all first 2 cells regardless of backtracking limit.
-                    context.backtracks = 0;
+            if (context.depth > 5) { // Permute all first 5 cells regardless of backtracking limit.
+                if (context.backtracks >= BACKTRACK_LIMIT) {
+                    if (context.backtracks === BACKTRACK_LIMIT) {
+                        console.log("Too much backtracking... Restarting.");
+                    }
                     break;
                 }
+            } else {
+                context.backtracks = 0;
             }
+                
             continue;
         }
     }
@@ -400,14 +403,16 @@ function generate_board_helper(context) {
 
 /**
  * @param {number} size
- * @param {Interval} difficulty The acceptable interval for the sum of tiers on each bingo line.
+ * @param {Interval | null} objective_difficulty The range of tiers that objectives will be pulled from.
+ *  Pass in null to include all tiers.
+ * @param {Interval} bingo_difficulty The acceptable interval for the sum of tiers on each bingo line.
  * @param {TypeExclusivity} type_exclusivity The strictness of type-incompatibility in bingo lines.
  *  -  `none` ignores objective types completely.
  *  -  `partial` avoids putting objectives with completely identical types into the same bingo line.
  *  -  `strict` avoids putting objectives with any shared types into the same bingo line.
  * @returns {Objective[][] | Error} A new `size`x`size` bingo board, or an `Error` objective if none was found.
  */
-function generate_board(size, bingo_difficulty, type_exclusivity) {
+function generate_board(size, objective_difficulty, bingo_difficulty, type_exclusivity) {
     /** @type {Objective[][]} */
     let board = new Array(size).fill(0).map(_ =>
         new Array(size).fill(null)
@@ -417,6 +422,7 @@ function generate_board(size, bingo_difficulty, type_exclusivity) {
     const context = {
         board: board,
         size: size,
+        objective_difficulty: objective_difficulty ?? Interval.safeIntegerRange(),
         bingo_difficulty: bingo_difficulty,
         type_exclusivity: type_exclusivity,
         objective_names: new Set(),
@@ -576,7 +582,7 @@ function save_board_json(board) {
     fs.writeFileSync("out/bingo.json", txt);
 }
 
-const board = generate_board(5, new Interval(5, 25), "partial");
+const board = generate_board(5, new Interval(10, 14), new Interval(50, 70), "strict");
 
 if (board instanceof Error) {
     console.log(board);
