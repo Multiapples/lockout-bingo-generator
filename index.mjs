@@ -1,18 +1,25 @@
-import { Canvas } from "canvas";
+// @ts-check
+
+import { Canvas, CanvasRenderingContext2D } from "canvas";
 import { data } from "./objectives/example.js";
 import fs from "node:fs";
 
 /** @type {{ name: string, types: string[] }[][]} */
 const bingo_data = data;
 
+/**
+ * Does nothing if the predicate is truthy. Throws an error otherwise with the optional message.
+ * @param {*} predicate
+ * @param {?string} msg
+ */
 function expect(predicate, msg = null) {
     if (predicate) {
         return;
     }
-    if (msg) {
-        throw new Error(msg);
-    } else {
+    if (msg === null) {
         throw new Error();
+    } else {
+        throw new Error(msg);
     }
 }
 
@@ -182,7 +189,7 @@ class Interval {
     }
     
     /**
-     * @returns {Intervasl} A new Interval with the range of [value, value].
+     * @returns {Interval} A new Interval with the range of [value, value].
      */
     static valueOf(value) {
         return new Interval(value, value);
@@ -212,7 +219,7 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
             );
         case "strict":
             const exclude_set = new Set();
-            exclude_types.forEach(types => exclude_set.add(...types));
+            exclude_types.flat(1).forEach(t => exclude_set.add(t));
             return bingo_pool.filter(obj =>
                 tier_interval.contains(obj.tier) &&
                 !exclude_names.has(obj.name) &&
@@ -228,7 +235,7 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
  */
 /**
  * @typedef {Object} GeneratorContext
- * @property {Objective[][]} board
+ * @property {(?Objective)[][]} board
  * @property {number} size
  * @property {Interval} objective_difficulty The acceptable interval for the tier of each individual objective.
  * @property {Interval} bingo_difficulty The acceptable interval for the sum of tiers on each bingo line.
@@ -295,7 +302,7 @@ function count_bingo_constraints(context, row, col) {
             }
         }
     } else {
-        bingo_tier_intervals[2] = null;
+        bingo_tier_intervals[2] = Interval.safeIntegerRange();
     }
 
     if (row + col === size - 1) {
@@ -311,7 +318,7 @@ function count_bingo_constraints(context, row, col) {
             }
         }
     } else {
-        bingo_tier_intervals[3] = null;
+        bingo_tier_intervals[3] = Interval.safeIntegerRange();
     }
     
     const bingo_tier_interval = bingo_tier_intervals.filter(v => v !== null)
@@ -441,9 +448,6 @@ function generate_board(size, objective_difficulty, bingo_difficulty, type_exclu
  * Adapted and edited from {@link https://stackoverflow.com/a/19894149}
  * @param {CanvasRenderingContext2D} context
  * @param {string} text
- * @param {number} x
- * @param {number} y
- * @param {number} line_height
  * @param {number} line_width
  * @returns {string[]} The lines of wrapped text.
  */
@@ -548,7 +552,7 @@ function save_board_image(board) {
 
             context.fillStyle = `hsl(${120 * (1 - obj.tier / MAX_TIER)}, 100.00%, 50.00%)`;
             context.fillText(
-                obj.tier,
+                obj.tier.toString(),
                 cell_rect.x + cell_rect.w - 5,
                 cell_rect.y + cell_rect.h - 5 - 22,
                 30
