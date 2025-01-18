@@ -33,28 +33,32 @@ class Objective {
         expect(tier !== undefined, "tier is undefined");
         expect(name !== undefined, "name is undefined");
         expect(types !== undefined, "types is undefined");
+        /** @readonly */
         this.tier = tier;
+        /** @readonly */
         this.name = name;
+        /** @readonly */
         this.types = types;
+        /** @readonly */
         this.types_set = new Set(types);
     }
 
     /**
      * Returns true if this objective contains all given types
-     * @param {string[]} types
+     * @param {Set<string>} types
      * @returns {boolean}
      */
     includes_types(types) {
-        return types.every(t => this.types_set.has(t))
+        return this.types.every(t => types.has(t))
     }
 
     /**
      * Returns true if this objective contains none of the given types
-     * @param {string[]} types
+     * @param {Set<string>} types
      * @returns {boolean}
      */
     excludes_types(types) {
-        return types.every(t => !this.types_set.has(t));
+        return this.types.every(t => !types.has(t));
     }
 }
 
@@ -200,7 +204,7 @@ class Interval {
  * Picks a random bingo objective with the given parameters.
  * @param {TypeExclusivity} type_exclusivity
  * @param {Interval} tier_interval
- * @param {string[][]} exclude_types
+ * @param {Set<string[]>} exclude_types
  * @param {Set<string>} exclude_names
  * @returns {Objective[]}
  */
@@ -215,15 +219,15 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
             return bingo_pool.filter(obj =>
                 tier_interval.contains(obj.tier) &&
                 !exclude_names.has(obj.name) &&
-                exclude_types.every(v => !obj.includes_types(v))
+                !exclude_types.has(obj.types)
             );
         case "strict":
             const exclude_set = new Set();
-            exclude_types.flat(1).forEach(t => exclude_set.add(t));
+            Array.from(exclude_types).flat(1).forEach(t => exclude_set.add(t));
             return bingo_pool.filter(obj =>
                 tier_interval.contains(obj.tier) &&
                 !exclude_names.has(obj.name) &&
-                exclude_types.every(v => obj.excludes_types(v))
+                obj.excludes_types(exclude_set)
             );
         default:
             throw new Error("Unhandled switch case: " + type_exclusivity);
@@ -253,7 +257,7 @@ function narrow_bingo_pool(type_exclusivity, tier_interval, exclude_types, exclu
  * @param {number} col The col to check constraints for
  * @returns {{
  *      tier_interval: Interval,
- *      exclude_types: string[][],
+ *      exclude_types: Set<string[]>,
  * }}
  */
 function count_bingo_constraints(context, row, col) {
@@ -263,8 +267,8 @@ function count_bingo_constraints(context, row, col) {
     // Also count types already present in each bingo to narrow down acceptable types.
     /** @type {Interval[]} */
     let bingo_tier_intervals = new Array(4).fill(0).map(_ => bingo_difficulty.clone());
-    /** @type {string[][]} */
-    let bingo_types = [];
+    /** @type {Set<string[]>} */
+    let bingo_types = new Set();
     for (let i = 0; i < size; i++) { // Along row
         if (i === col) {
             continue;
@@ -273,7 +277,7 @@ function count_bingo_constraints(context, row, col) {
         const cell = board[row][i];
         bingo_tier_intervals[0].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
         if (cell !== null) {
-            bingo_types.push(cell.types);
+            bingo_types.add(cell.types);
         }
     }
 
@@ -285,7 +289,7 @@ function count_bingo_constraints(context, row, col) {
         const cell = board[i][col];
         bingo_tier_intervals[1].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
         if (cell !== null) {
-            bingo_types.push(cell.types);
+            bingo_types.add(cell.types);
         }
     }
 
@@ -298,7 +302,7 @@ function count_bingo_constraints(context, row, col) {
             const cell = board[i][i];
             bingo_tier_intervals[2].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
             if (cell !== null) {
-                bingo_types.push(cell.types);
+                bingo_types.add(cell.types);
             }
         }
     } else {
@@ -314,7 +318,7 @@ function count_bingo_constraints(context, row, col) {
             const cell = board[i][size - 1 - i];
             bingo_tier_intervals[3].sub(cell === null ? objective_difficulty : Interval.valueOf(cell.tier));
             if (cell !== null) {
-                bingo_types.push(cell.types);
+                bingo_types.add(cell.types);
             }
         }
     } else {
